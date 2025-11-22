@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import AsyncSessionLocal
+from app.database import db_manager
 
 
 async def get_db() -> AsyncGenerator[AsyncSession]:
@@ -21,7 +21,7 @@ async def get_db() -> AsyncGenerator[AsyncSession]:
             return result.scalars().all()
         ```
     """
-    async with AsyncSessionLocal() as session:
+    async with db_manager.sessionmaker() as session:
         try:
             yield session
         except Exception:

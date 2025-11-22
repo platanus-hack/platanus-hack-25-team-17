@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse
 
 from app.config import settings
 from app.core.logging import setup_logging
+from app.database import db_manager
 from app.middleware.error_handler import error_handler_middleware
 from app.middleware.logging_middleware import logging_middleware
 
@@ -18,7 +19,16 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
+    """Application lifespan manager.
+
+    Handles startup and shutdown events for the FastAPI application.
+    - Startup: Initialize database engine and session factory
+    - Shutdown: Dispose database engine and close all connections
+    """
+    # Startup: Connect to database
+    await db_manager.connect()
     yield
+    await db_manager.disconnect()
 
 
 # Create FastAPI application

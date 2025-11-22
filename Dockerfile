@@ -8,12 +8,15 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && (cp /root/.cargo/bin/uv /usr/local/bin/uv 2>/dev/null || cp /root/.local/bin/uv /usr/local/bin/uv) \
+    && chmod +x /usr/local/bin/uv
 
-ENV PATH="/root/.cargo/bin:$PATH"
+ENV PATH="/usr/local/bin:$PATH"
 
 # Copy dependency files
 COPY pyproject.toml ./
+COPY README.md ./
 COPY app ./app
 
 # Install dependencies with uv
