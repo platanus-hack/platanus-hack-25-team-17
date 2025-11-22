@@ -1,4 +1,4 @@
-from sqlalchemy.exc import NoResultFound
+from sqlalchemy.orm.exc import NoResultFound
 from app.services.ocr_service import download_image_from_url, scan_receipt
 from app.models.kapso import KapsoImage, KapsoTextMessage, KapsoConversation
 from app.models.receipt import ReceiptExtraction, TransferExtraction, ReceiptDocumentType
@@ -30,7 +30,10 @@ def handle_receipt(db_session: Session, receipt: ReceiptExtraction, sender: str)
         send_text_message(sender, TOO_MANY_ACTIVE_SESSIONS_MESSAGE)
         return
     except NoResultFound:
-        send_text_message(sender, "No hay una sesión activa para este usuario.")
+        send_text_message(
+            sender,
+            "No hay sesión de cobro activa para este usuario. Envia un id de sesión para unirte a una, o puedes elegir crear una nueva sesión de cobro.",
+        )
         return
 
 
@@ -50,4 +53,5 @@ async def handle_image_message(db_session: Session, message: KapsoImage, sender:
 async def handle_text_message(db_session: Session, message: KapsoTextMessage, sender: str) -> None:
     action_to_execute = await process_user_command(message.text.body)
     if action_to_execute.action == ActionType.CREATE_SESSION:
-        create_session(db_session, action_to_execute.create_session_data.description, sender)
+        session = create_session(db_session, action_to_execute.create_session_data.description, sender)
+        send_text_message(sender, build_session_id_link(session.id))
