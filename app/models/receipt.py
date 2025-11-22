@@ -7,6 +7,7 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from enum import StrEnum
+from datetime import datetime, timezone
 
 
 class ReceiptDocumentType(StrEnum):
@@ -33,7 +34,12 @@ class ReceiptExtraction(BaseModel):
     """
 
     merchant: str = Field(..., description="Merchant or restaurant name")
-    receipt_date: date = Field(..., description="Receipt date in YYYY-MM-DD format", alias="date")
+    receipt_date: date = Field(
+        ...,
+        description="Receipt date in YYYY-MM-DD format",
+        alias="date",
+        default=datetime.now(tz=timezone.utc).replace(tzinfo=None).date(),
+    )
     total_amount: float = Field(..., gt=0, description="Total amount of the receipt")
     tip: float = Field(
         default=0.0,
