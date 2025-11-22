@@ -1,29 +1,13 @@
-from sqlalchemy.orm import Session as DBSession
-from sqlalchemy.exc import NoResultFound
-from app.database.models.session import Session, SessionStatus
-from app.database.sql.user import get_user_by_phone_number
+from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.database.models.session import Session, SessionStatus, session_users
+from app.database.models.user import User
+from app.database.sql.user import get_user_by_phone_number, get_user_by_id
 import uuid
 
 
-def get_active_session_by_user_id(db_session: DBSession, user_id: int) -> Session | None:
-    """Get the active session for a user.
-
-    This looks for sessions where the user is either the owner or a participant.
-
-    Args:
-        db_session: Database session
-        user_id: User ID
-
-    Returns:
-        Session if found, None otherwise
-
-    Raises:
-        MultipleResultsFound: If multiple active sessions are found
-        NoResultFound: If no active session is found
-    """
-    from app.database.models.user import User
-
-    # First try to find session where user is owner
+async def get_active_session_by_user_id(db_session: AsyncSession, user_id: int) -> Session | None:
     owner_session = (
         db_session.query(Session)
         .filter(Session.owner_id == user_id)
@@ -34,17 +18,15 @@ def get_active_session_by_user_id(db_session: DBSession, user_id: int) -> Sessio
     if owner_session:
         return owner_session
 
-    # If not owner, check if user is a participant in any active session
-    user = db_session.query(User).filter(User.id == user_id).one()
-    for session in user.sessions:
-        if session.status == SessionStatus.ACTIVE:
-            return session
+    user = await get_user_by_id(db_session, user_id)
 
-    # If no active session found, raise NoResultFound
-    raise NoResultFound(f"No active session found for user {user_id}")
+    result = await db_session.execute(
+        select(Session).filter(Session.owner_id == user_id).filter(Session.status == SessionStatus.ACTIVE)
+    )
+    return result
 
 
-def has_active_session(db_session: DBSession, user_id: int) -> bool:
+async def has_active_session(db_session: AsyncSession, user_id: int) -> bool:
     """Check if a user has an active session.
 
     This checks if the user is either owner or participant in an active session.
@@ -57,13 +39,13 @@ def has_active_session(db_session: DBSession, user_id: int) -> bool:
         True if user has an active session, False otherwise
     """
     try:
-        get_active_session_by_user_id(db_session, user_id)
-        return True
+        result = await get_active_session_by_user_id(db_session, user_id)
+        return result is not None
     except NoResultFound:
         return False
 
 
-def get_all_session_users(db_session: DBSession, session_id: str) -> list[tuple[int, str]]:
+async def get_all_session_users(db_session: AsyncSession, session_id: str) -> list[tuple[int, str]]:
     """Get all users (owner + participants) in a session.
 
     Args:
@@ -73,133 +55,70 @@ def get_all_session_users(db_session: DBSession, session_id: str) -> list[tuple[
     Returns:
         List of tuples (user_id, phone_number) for all users in the session
     """
-    from app.database.models.user import User
-    from app.database.models.session import session_users
-    from sqlalchemy import select
-    
+
     session_uuid = uuid.UUID(session_id)
     session = get_session_by_id(db_session, session_id)
-    
+
     # Get owner
-    owner = db_session.query(User).filter(User.id == session.owner_id).one()
+    owner = await get_user_by_id(db_session, session.owner_id)
     users_list = [(owner.id, owner.phone_number)]
-    
+
     # Get all participants from session_users table
-    participants = db_session.execute(
+    participants = await db_session.execute(
         select(User.id, User.phone_number)
         .select_from(session_users)
         .join(User, session_users.c.user_id == User.id)
         .where(
             session_users.c.session_id == session_uuid,
-            session_users.c.user_id != session.owner_id  # Exclude owner to avoid duplicates
+            session_users.c.user_id != session.owner_id,  # Exclude owner to avoid duplicates
         )
     ).all()
-    
+
     users_list.extend(participants)
     return users_list
 
 
-def close_session(db_session: DBSession, session_id: str, user_phone: str) -> Session:
-    """Close a session.
+async def close_session(db_session: AsyncSession, session_id: str, user_phone: str) -> Session:
+    session = await get_session_by_id(db_session, session_id)
+    user = await get_user_by_phone_number(db_session, user_phone)
 
-    Only the session owner can close the session.
-
-    Args:
-        db_session: Database session
-        session_id: Session ID to close
-        user_phone: Phone number of the user trying to close the session
-
-    Returns:
-        Closed session
-
-    Raises:
-        NoResultFound: If session is not found
-        ValueError: If user is not the owner of the session
-    """
-    session = db_session.query(Session).filter(Session.id == session_id).one()
-    user = get_user_by_phone_number(db_session, user_phone)
-    
     if not user:
         raise NoResultFound(f"User with phone {user_phone} not found")
-    
+
     # Check if user is the owner
     if session.owner_id != user.id:
         raise ValueError("Solo el creador de la sesión puede cerrarla")
-    
+
     session.status = SessionStatus.CLOSED
-    db_session.commit()
+    await db_session.commit()
     return session
 
 
-def create_session(db_session: DBSession, description: str, owner_number: str) -> Session:
-    """Create a new session for a user.
-
-    Args:
-        db_session: Database session
-        description: Session description
-        owner_number: Owner phone number
-
-    Returns:
-        Created session
-    """
-    user = get_user_by_phone_number(db_session, owner_number)
+async def create_session(db_session: AsyncSession, description: str, owner_number: str) -> Session:
+    user = await get_user_by_phone_number(db_session, owner_number)
     session = Session(description=description, owner_id=user.id, status=SessionStatus.ACTIVE)
     db_session.add(session)
-    db_session.commit()
+    await db_session.commit()
     return session
 
 
-def get_session_by_id(db_session: DBSession, session_id: str) -> Session:
-    """Get a session by its UUID.
-
-    Args:
-        db_session: Database session
-        session_id: Session UUID as string
-
-    Returns:
-        Session object
-
-    Raises:
-        NoResultFound: If session is not found
-        ValueError: If session_id is not a valid UUID
-    """
+async def get_session_by_id(db_session: AsyncSession, session_id: str) -> Session:
     try:
         session_uuid = uuid.UUID(session_id)
     except (ValueError, AttributeError) as e:
         raise ValueError(f"Invalid session ID format: {session_id}") from e
 
-    session = db_session.query(Session).filter(Session.id == session_uuid).one()
+    session = await db_session.execute(select(Session).filter(Session.id == session_uuid))
     return session
 
 
-def join_session(db_session: DBSession, session_id: str, user_phone: str) -> tuple[Session, bool]:
-    """Join a user to an existing session.
-
-    If the user has an active session, it will be closed first.
-    Then the user will be added to the specified session.
-
-    Args:
-        db_session: Database session
-        session_id: UUID of the session to join
-        user_phone: Phone number of the user joining
-
-    Returns:
-        Tuple of (Session object that the user joined, whether user was already in session)
-
-    Raises:
-        NoResultFound: If session or user is not found
-        ValueError: If session is closed or session_id is invalid
-    """
-    from app.database.models.session import session_users
-    from sqlalchemy import select
-    
-    # Get user
-    user = get_user_by_phone_number(db_session, user_phone)
+async def join_session(db_session: AsyncSession, session_id: str, user_phone: str) -> tuple[Session, bool]:
+    user = await get_user_by_phone_number(db_session, user_phone)
     if not user:
         raise NoResultFound(f"User with phone {user_phone} not found")
 
     # Get target session
-    target_session = get_session_by_id(db_session, session_id)
+    target_session = await get_session_by_id(db_session, session_id)
 
     # Check if target session is active
     if target_session.status != SessionStatus.ACTIVE:
@@ -207,11 +126,8 @@ def join_session(db_session: DBSession, session_id: str, user_phone: str) -> tup
 
     # Check if user is already in this session
     session_uuid = uuid.UUID(session_id)
-    existing_membership = db_session.execute(
-        select(session_users).where(
-            session_users.c.session_id == session_uuid,
-            session_users.c.user_id == user.id
-        )
+    existing_membership = await db_session.execute(
+        select(session_users).where(session_users.c.session_id == session_uuid, session_users.c.user_id == user.id)
     ).first()
 
     if existing_membership:
@@ -230,7 +146,6 @@ def join_session(db_session: DBSession, session_id: str, user_phone: str) -> tup
 
     # Add user to target session (many-to-many relationship)
     target_session.users.append(user)
-    db_session.commit()
-    db_session.refresh(target_session)
+    await db_session.commit()
 
     return target_session, False

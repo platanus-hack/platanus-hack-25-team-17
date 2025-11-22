@@ -1,22 +1,16 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.database.models.user import User
 import logging
 
 
-def get_user_by_phone_number(db_session: Session, phone_number: str) -> User | None:
-    """Get a user by their phone number.
-
-    Args:
-        db_session: Database session
-        phone_number: Phone number to search for
-
-    Returns:
-        User object if found, None otherwise
-    """
+async def get_user_by_phone_number(db_session: AsyncSession, phone_number: str) -> User | None:
     logging.info(f"Getting user by phone number: {phone_number}")
     try:
-        user = db_session.query(User).filter(User.phone_number == phone_number).one_or_none()
+        result = await db_session.execute(select(User).filter(User.phone_number == phone_number))
+        user = result.scalar_one_or_none()
         logging.info(f"User: {user}")
         return user
     except Exception as e:
@@ -24,32 +18,7 @@ def get_user_by_phone_number(db_session: Session, phone_number: str) -> User | N
         return None
 
 
-def create_user(db_session: Session, phone_number: str, name: str) -> User:
-    """Create a new user.
-
-    Args:
-        db_session: Database session
-        phone_number: User's phone number
-        name: User's name
-
-    Returns:
-        Created User object
-
-    Raises:
-        IntegrityError: If user with same phone number already exists
-    """
-    try:
-        user = User(phone_number=phone_number, name=name)
-        db_session.add(user)
-        db_session.commit()
-        db_session.refresh(user)
-        logging.info(f"Created new user: {user.id} - {phone_number}")
-        return user
-    except IntegrityError as e:
-        db_session.rollback()
-        logging.warning(f"User with phone {phone_number} already exists, fetching existing user")
-        # If user already exists, fetch and return it
-        existing_user = get_user_by_phone_number(db_session, phone_number)
-        if existing_user:
-            return existing_user
-        raise e  # Re-raise if we couldn't find the existing user
+async def create_user(db_session: AsyncSession, phone_number: str, name: str) -> None:
+    user = User(phone_number=phone_number, name=name)
+    db_session.add(user)
+    await db_session.commit()
