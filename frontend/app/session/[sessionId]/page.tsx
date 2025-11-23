@@ -17,8 +17,6 @@ export default async function SessionPage({ params }: PageProps) {
   let participants: Array<{
     id: string
     nombre: string
-    vecesJuntos: number
-    tiempoPromedioTransferenciaHoras: number
     montoReembolsadoEnEstaCompra: number
     estadoPago: "pagado" | "pendiente" | "atrasado"
   }> = []
@@ -41,10 +39,7 @@ export default async function SessionPage({ params }: PageProps) {
   // Calculate statistics
   const totalParticipantes = participants.length
   const montoTotalReembolsado = participants.reduce((sum, p) => sum + p.montoReembolsadoEnEstaCompra, 0)
-  const tiempoPromedioGrupo =
-    participants.length > 0
-      ? participants.reduce((sum, p) => sum + p.tiempoPromedioTransferenciaHoras, 0) / participants.length
-      : 0
+  const saldoFaltante = sessionData.montoTotal - montoTotalReembolsado
 
   // Formatear moneda CLP
   const formatCLP = (amount: number) => {
@@ -53,17 +48,6 @@ export default async function SessionPage({ params }: PageProps) {
       currency: "CLP",
       minimumFractionDigits: 0,
     }).format(amount)
-  }
-
-  // Formatear tiempo en horas
-  const formatHours = (hours: number) => {
-    const fullHours = Math.floor(hours)
-    const minutes = Math.round((hours - fullHours) * 60)
-
-    if (minutes === 0) {
-      return `${fullHours}h`
-    }
-    return `${fullHours}h ${minutes}min`
   }
 
   return (
@@ -103,12 +87,12 @@ export default async function SessionPage({ params }: PageProps) {
             </CardContent>
           </Card>
 
-          <Card className="sm:col-span-2 lg:col-span-1">
+          <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Tiempo Promedio de Transferencia</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">Saldo Faltante</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-gray-900">{formatHours(tiempoPromedioGrupo)}</div>
+              <div className="text-3xl font-bold text-gray-900">{formatCLP(saldoFaltante)}</div>
             </CardContent>
           </Card>
         </div>
@@ -124,8 +108,6 @@ export default async function SessionPage({ params }: PageProps) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nombre</TableHead>
-                    <TableHead className="text-center">Veces Juntos</TableHead>
-                    <TableHead className="text-center">Tiempo Promedio</TableHead>
                     <TableHead className="text-right">Monto Reembolsado</TableHead>
                     <TableHead className="text-center">Estado</TableHead>
                   </TableRow>
@@ -133,7 +115,7 @@ export default async function SessionPage({ params }: PageProps) {
                 <TableBody>
                   {participants.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-gray-500">
+                      <TableCell colSpan={3} className="text-center text-gray-500">
                         No hay participantes en esta sesión
                       </TableCell>
                     </TableRow>
@@ -141,10 +123,6 @@ export default async function SessionPage({ params }: PageProps) {
                     participants.map((participante) => (
                       <TableRow key={participante.id}>
                         <TableCell className="font-medium">{participante.nombre}</TableCell>
-                        <TableCell className="text-center">{participante.vecesJuntos}</TableCell>
-                        <TableCell className="text-center">
-                          {formatHours(participante.tiempoPromedioTransferenciaHoras)}
-                        </TableCell>
                         <TableCell className="text-right font-medium">
                           {formatCLP(participante.montoReembolsadoEnEstaCompra)}
                         </TableCell>

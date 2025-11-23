@@ -46,8 +46,6 @@ export interface SessionData {
 export interface Participante {
   id: string
   nombre: string
-  vecesJuntos: number
-  tiempoPromedioTransferenciaHoras: number
   montoReembolsadoEnEstaCompra: number
   estadoPago: "pagado" | "pendiente" | "atrasado"
 }
@@ -159,8 +157,6 @@ export function transformSessionData(
     return {
       id: userId.toString(),
       nombre: userName,
-      vecesJuntos: 1, // TODO: Calculate from historical data
-      tiempoPromedioTransferenciaHoras: 2.5, // TODO: Calculate from payment history
       montoReembolsadoEnEstaCompra: montoReembolsado,
       estadoPago,
     }
