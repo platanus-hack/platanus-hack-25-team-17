@@ -17,6 +17,7 @@ from app.database.models.session import Session, session_users
 from app.database.models.invoice import Invoice
 from app.database.models.item import Item
 from app.database.models.payment import Payment
+from app.database.models.payment_method import PaymentMethod
 
 __all__ = [
     "User",
@@ -25,4 +26,5 @@ __all__ = [
     "Invoice",
     "Item",
     "Payment",
+    "PaymentMethod",
 ]

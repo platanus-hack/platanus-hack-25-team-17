@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   db:
@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: platanus_db
     ports:
-      - "5432:5432"
+      - "9999:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +27,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/platanus_db
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:9999/platanus_db
     depends_on:
       db:
         condition: service_healthy
