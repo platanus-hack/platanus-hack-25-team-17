@@ -27,13 +27,14 @@ SESSION_CREATED_MESSAGE = (
     "Comparte este link con otros para que se unan a la sesión:"
 )
 
+
 def build_session_closed_message(session_description: str, is_owner: bool) -> str:
     """Build session closed message based on user role.
 
     Args:
         session_description: Description of the closed session
         is_owner: Whether the user is the owner
-    
+
     Returns:
         Formatted message
     """
@@ -50,11 +51,12 @@ def build_session_closed_message(session_description: str, is_owner: bool) -> st
             f"Gracias por participar!"
         )
 
+
 logger = get_logger(__name__)
 
 
 def build_invoice_created_message(invoice: Invoice, items: list[Item]) -> str:
-    message_parts = ["Boleta ingresada correctamente.\n"]
+    message_parts = ["Se ha añadido una nueva boleta a la sesión de cobro.\n"]
     message_parts.append(f"{invoice.description}, Total: {invoice.total}")
     message_parts.append("Detalle:")
     for item in items:
@@ -78,8 +80,8 @@ def build_session_id_link(session_id: UUID) -> str:
 
     # Create a descriptive message for joining the session
     message = f"Me quiero unir a la sesión {session_id}"
-    
+
     # URL encode the message for WhatsApp
-    encoded_message = quote(message, safe='')
-    
+    encoded_message = quote(message, safe="")
+
     return f"https://wa.me/{settings.KAPSO_PHONE_NUMBER}?text={encoded_message}"

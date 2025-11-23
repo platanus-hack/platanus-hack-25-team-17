@@ -9,7 +9,9 @@ import uuid
 
 async def get_active_session_by_user_id(db_session: AsyncSession, user_id: int) -> Session | None:
     result = await db_session.execute(
-        select(Session).filter(or_(Session.owner_id == user_id, session_users.c.user_id == user_id)).filter(Session.status == SessionStatus.ACTIVE)
+        select(Session)
+        .filter(or_(Session.owner_id == user_id, session_users.c.user_id == user_id))
+        .filter(Session.status == SessionStatus.ACTIVE)
     )
     return result.scalar_one_or_none()
 
@@ -140,9 +142,7 @@ async def join_session(db_session: AsyncSession, session_id: str, user_phone: st
 
     # Add user to target session (many-to-many relationship)
     # Use insert directly on the association table to avoid lazy loading issues
-    await db_session.execute(
-        insert(session_users).values(session_id=session_uuid, user_id=user.id)
-    )
+    await db_session.execute(insert(session_users).values(session_id=session_uuid, user_id=user.id))
     await db_session.commit()
     await db_session.refresh(target_session)
 

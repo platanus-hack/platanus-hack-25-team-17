@@ -26,6 +26,7 @@ from app.database.sql.session import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.sql.user import get_user_by_phone_number, create_user
+from app.logic.message_sender import send_message_to_all_session_users
 
 
 async def check_existing_user_logic(db_session: AsyncSession, conversation: KapsoConversation) -> None:
@@ -64,7 +65,7 @@ async def handle_receipt(db_session: AsyncSession, receipt: ReceiptExtraction, s
     tip = receipt.tip / receipt.total_amount
     try:
         invoice, items = await create_invoice_with_items(db_session, receipt, tip, sender)
-        send_text_message(sender, build_invoice_created_message(invoice, items))
+        send_message_to_all_session_users(db_session, invoice.session_id, build_invoice_created_message(invoice, items))
     except MultipleResultsFound:
         send_text_message(sender, TOO_MANY_ACTIVE_SESSIONS_MESSAGE)
         return
@@ -129,7 +130,6 @@ async def handle_image_message(db_session: AsyncSession, image: KapsoImage, send
         await handle_transfer(db_session, ocr_result.transfer, sender)
 
 
-
 async def handle_voice_message(db_session: AsyncSession, conversation: KapsoConversation, sender: str) -> None:
     """
     Extrae la transcripción del mensaje de voz y la procesa con el agente.
@@ -138,25 +138,25 @@ async def handle_voice_message(db_session: AsyncSession, conversation: KapsoConv
     if not conversation.kapso or not conversation.kapso.last_message_text:
         logging.warning(f"No se encontró transcripción para mensaje de voz de {sender}")
         return
-    
+
     last_message_text = conversation.kapso.last_message_text
-    
+
     # Buscar el prefijo "Transcript: " y extraer solo la transcripción
     transcript_prefix = "Transcript: "
     if transcript_prefix not in last_message_text:
         logging.warning(f"No se encontró el prefijo 'Transcript: ' en last_message_text: {last_message_text}")
         return
-    
+
     # Encontrar la posición después de "Transcript: "
     transcript_start = last_message_text.find(transcript_prefix) + len(transcript_prefix)
     transcript = last_message_text[transcript_start:].strip()
-    
+
     if not transcript:
         logging.warning(f"La transcripción está vacía para mensaje de voz de {sender}")
         return
-    
+
     logging.info(f"Procesando transcripción de voz: {transcript[:100]}...")
-    
+
     # Procesar la transcripción con el agente, igual que handle_text_message
     action_to_execute = await process_user_command(transcript)
     if action_to_execute.action == ActionType.CREATE_SESSION:
