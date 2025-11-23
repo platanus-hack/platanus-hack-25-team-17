@@ -8,22 +8,10 @@ import uuid
 
 
 async def get_active_session_by_user_id(db_session: AsyncSession, user_id: int) -> Session | None:
-    owner_session = (
-        db_session.query(Session)
-        .filter(Session.owner_id == user_id)
-        .filter(Session.status == SessionStatus.ACTIVE)
-        .one_or_none()
-    )
-
-    if owner_session:
-        return owner_session
-
-    user = await get_user_by_id(db_session, user_id)
-
     result = await db_session.execute(
         select(Session).filter(Session.owner_id == user_id).filter(Session.status == SessionStatus.ACTIVE)
     )
-    return result
+    return result.scalar_one_or_none()
 
 
 async def has_active_session(db_session: AsyncSession, user_id: int) -> bool:
@@ -57,14 +45,14 @@ async def get_all_session_users(db_session: AsyncSession, session_id: str) -> li
     """
 
     session_uuid = uuid.UUID(session_id)
-    session = get_session_by_id(db_session, session_id)
+    session = await get_session_by_id(db_session, session_id)
 
     # Get owner
     owner = await get_user_by_id(db_session, session.owner_id)
     users_list = [(owner.id, owner.phone_number)]
 
     # Get all participants from session_users table
-    participants = await db_session.execute(
+    result = await db_session.execute(
         select(User.id, User.phone_number)
         .select_from(session_users)
         .join(User, session_users.c.user_id == User.id)
@@ -72,8 +60,8 @@ async def get_all_session_users(db_session: AsyncSession, session_id: str) -> li
             session_users.c.session_id == session_uuid,
             session_users.c.user_id != session.owner_id,  # Exclude owner to avoid duplicates
         )
-    ).all()
-
+    )
+    participants = result.all()
     users_list.extend(participants)
     return users_list
 
@@ -108,7 +96,10 @@ async def get_session_by_id(db_session: AsyncSession, session_id: str) -> Sessio
     except (ValueError, AttributeError) as e:
         raise ValueError(f"Invalid session ID format: {session_id}") from e
 
-    session = await db_session.execute(select(Session).filter(Session.id == session_uuid))
+    result = await db_session.execute(select(Session).filter(Session.id == session_uuid))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise NoResultFound(f"Session with ID {session_id} not found")
     return session
 
 
@@ -126,20 +117,21 @@ async def join_session(db_session: AsyncSession, session_id: str, user_phone: st
 
     # Check if user is already in this session
     session_uuid = uuid.UUID(session_id)
-    existing_membership = await db_session.execute(
+    result = await db_session.execute(
         select(session_users).where(session_users.c.session_id == session_uuid, session_users.c.user_id == user.id)
-    ).first()
+    )
+    existing_membership = result.first()
 
     if existing_membership:
         # User is already in the session
         return target_session, True
 
     # Close user's active session if exists and it's not the target session
-    if has_active_session(db_session, user.id):
+    if await has_active_session(db_session, user.id):
         try:
-            active_session = get_active_session_by_user_id(db_session, user.id)
+            active_session = await get_active_session_by_user_id(db_session, user.id)
             # Only close if it's a different session
-            if str(active_session.id) != session_id:
+            if active_session and str(active_session.id) != session_id:
                 active_session.status = SessionStatus.CLOSED
         except Exception:
             pass  # If there's an issue closing, continue
