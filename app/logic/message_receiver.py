@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy.orm.exc import NoResultFound
 from app.services.ocr_service import download_image_from_url, scan_receipt
-from app.models.kapso import KapsoImage, KapsoTextMessage, KapsoConversation
+from app.models.kapso import KapsoImage, KapsoBody, KapsoConversation
 from app.models.receipt import ReceiptExtraction, TransferExtraction, ReceiptDocumentType
 from app.database.sql.invoice import create_invoice_with_items
 from app.integrations.kapso import send_text_message
@@ -97,8 +97,42 @@ async def handle_image_message(db_session: AsyncSession, image: KapsoImage, send
         await handle_transfer(db_session, ocr_result.transfer, sender)
 
 
-async def handle_text_message(db_session: AsyncSession, message: KapsoTextMessage, sender: str) -> None:
-    action_to_execute = await process_user_command(message.text.body)
+async def handle_text_message(db_session: AsyncSession, message: KapsoBody, sender: str) -> None:
+    action_to_execute = await process_user_command(message.body)
+    if action_to_execute.action == ActionType.CREATE_SESSION:
+        session = await create_session(db_session, action_to_execute.create_session_data.description, sender)
+        send_text_message(sender, build_session_id_link(session.id))
+
+
+async def handle_voice_message(db_session: AsyncSession, conversation: KapsoConversation, sender: str) -> None:
+    """
+    Extrae la transcripción del mensaje de voz y la procesa con el agente.
+    La transcripción se encuentra en conversation.kapso.last_message_text con formato "Transcript: ..."
+    """
+    if not conversation.kapso or not conversation.kapso.last_message_text:
+        logging.warning(f"No se encontró transcripción para mensaje de voz de {sender}")
+        return
+    
+    last_message_text = conversation.kapso.last_message_text
+    
+    # Buscar el prefijo "Transcript: " y extraer solo la transcripción
+    transcript_prefix = "Transcript: "
+    if transcript_prefix not in last_message_text:
+        logging.warning(f"No se encontró el prefijo 'Transcript: ' en last_message_text: {last_message_text}")
+        return
+    
+    # Encontrar la posición después de "Transcript: "
+    transcript_start = last_message_text.find(transcript_prefix) + len(transcript_prefix)
+    transcript = last_message_text[transcript_start:].strip()
+    
+    if not transcript:
+        logging.warning(f"La transcripción está vacía para mensaje de voz de {sender}")
+        return
+    
+    logging.info(f"Procesando transcripción de voz: {transcript[:100]}...")
+    
+    # Procesar la transcripción con el agente, igual que handle_text_message
+    action_to_execute = await process_user_command(transcript)
     if action_to_execute.action == ActionType.CREATE_SESSION:
         session = await create_session(db_session, action_to_execute.create_session_data.description, sender)
         send_text_message(sender, build_session_id_link(session.id))
